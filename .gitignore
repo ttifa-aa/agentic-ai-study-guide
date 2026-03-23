@@ -9,4 +9,6 @@ sample.pdf
 *.pptx
 *.txt
 !requirements.txt
-!log.txt
+backup.py
+test.ipynb
+temp.py
