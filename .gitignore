@@ -1,0 +1,12 @@
+.env
+venv/
+__pycache__/
+*.pyc
+documents/
+sample.pdf
+*.pdf
+*.docx
+*.pptx
+*.txt
+!requirements.txt
+!log.txt

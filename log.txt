@@ -1,0 +1,7 @@
+week log:
+WEEK 1:
+-> created a basic RAG Skeleton, got the basics working
+-> got the api keys and ensured that everything works
+-> took some time to refamiliarize ourselves with what was taught in the workshop
+-> learnt some additional technology to use in our project for a smoother flow as well as ease of use
+-> added support for pdf, doc/docx, ppt/pptx, txt [currently testing.]
