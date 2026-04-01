@@ -27,6 +27,10 @@ if "chat_history" not in st.session_state:   # chat_history will store the conve
 if "rag_chain" not in st.session_state: # rag_chain will hold the Retrieval-Augmented Generation chain that processes user queries and retrieves relevant information from the vectorstore
     st.session_state.rag_chain = None  # initialized to None until the RAG chain is created based on the uploaded documents and vectorstore
 
+if "exam_chain" not in st.session_state:
+    st.session_state.exam_chain = None
+
+
 def process_uploaded_file(uploaded_file, content_type): # function to process the uploaded file, extract its content, and prepare it for indexing in the vectorstore
     # save uploaded file temporarily to disk
     with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as f: # creates a temporary file on disk with the same extension as the uploaded file, 
@@ -86,6 +90,19 @@ with st.sidebar:
                 
                 # create RAG chain
                 llm = ChatGroq(model="llama-3.1-8b-instant", api_key=GROQ_API_KEY, temperature=0.3)
+                exam_prompt = ChatPromptTemplate.from_template("""
+Role: Expert Academic Tutor solving exam questions.
+Task: Solve the given exam question using ONLY the provided study materials.
+Guidelines:
+1. Break down the solution step by step.
+2. Reference relevant theory from [Textbook] or [Notes].
+3. Show working/reasoning clearly.
+4. End with a concise exam-ready answer summary.
+5. If the topic isn't in the uploaded materials, say: "Context lacks details on this — here's a general approach:"
+Context: {context}
+Exam Question: {question}
+Solution:
+                                                               """)
                 prompt = ChatPromptTemplate.from_template("""
 Role: Expert Academic Assistant.
 Task: Synthesize answers from provided context.
@@ -109,7 +126,12 @@ Answer:""")
                     | llm
                     | StrOutputParser()
                 ) # creates the RAG chain by combining the retriever, a formatting function for the retrieved documents, the defined prompt template, the language model (LLM), and an output parser. The RAG chain will take user questions as input, retrieve relevant document chunks from the vectorstore, format them for context, and use the LLM to generate structured answers based on the provided guidelines in the prompt template.
-                
+                st.session_state.exam_chain = (
+                    {"context": retriever | format_docs, "question": RunnablePassthrough()}
+                    | exam_prompt
+                    | llm
+                    | StrOutputParser()
+                )
                 st.success(f"[✓] {uploaded_file.name} processed as [{content_type}]!") # displays a success message in the Streamlit app indicating that the uploaded file has been successfully processed and indexed in the vectorstore, along with the content type that was selected for the document, providing feedback to the user that their document is now ready for querying through the chat interface.
 
     # show uploaded docs
@@ -124,6 +146,8 @@ Answer:""")
 # Main area for chat
 st.header("Ask a Question")
 # chat interface goes here
+
+mode = st.radio("Select mode:", ["Study Mode", "Exam mode"], horizontal = True)
 
 # display chat history
 for message in st.session_state.chat_history:
@@ -152,7 +176,10 @@ if user_input:
     else:
         with st.chat_message("assistant"):  # loading messages and stuff
             with st.spinner("Thinking..."): # to be displayed while loading
-                answer = st.session_state.rag_chain.invoke(user_input) # generate a response for the input from user
+                if mode == "Exam mode":
+                    answer = st.session_state.exam_chain.invoke(user_input)
+                else:
+                    answer = st.session_state.rag_chain.invoke(user_input)
                 st.write(answer) # write the generated answer into the chat interface
-        st.session_state.chat_history.append({"role": "assistant", "content": answer}) # add the generated answer to the chat history
+            st.session_state.chat_history.append({"role": "assistant", "content": answer}) # add the generated answer to the chat history
 
