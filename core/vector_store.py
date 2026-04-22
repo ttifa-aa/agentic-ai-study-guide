@@ -220,10 +220,12 @@ class VectorStoreManager:
         similarity_threshold = similarity_threshold or config.SIMILARITY_THRESHOLD
         
         # create retriever with search parameters
+        # use "similarity_score_threshold" so FAISS actually applies the threshold filter;
+        # with plain "similarity" the score_threshold key is silently ignored
         retriever = self.vectorstore.as_retriever(
-            search_type=search_type,  # "similarity" for standard search, "mmr" for diversity
+            search_type="similarity_score_threshold",
             search_kwargs={
-                "k": k,  # number of documents to retrieve
+                "k": k,                              # number of documents to retrieve
                 "score_threshold": similarity_threshold  # minimum similarity score
             }
         )

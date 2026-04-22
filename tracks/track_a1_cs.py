@@ -147,13 +147,20 @@ class TrackA1CS(BaseTrack):
         """
         query_lower = query.lower()
         
+        # check complexity first — it's more specific than "algorithm" and shares keywords
+        # ("big o", "complexity") that would otherwise match the algorithm branch first
+        complexity_keywords = ["time complexity", "space complexity", "o(n)", "o(log n)", "big o"]
+        if any(keyword in query_lower for keyword in complexity_keywords):
+            return "complexity"
+        
         # check for code-related queries
         code_keywords = ["code", "implement", "write a program", "function", "class", "method"]
         if any(keyword in query_lower for keyword in code_keywords):
             return "code"
         
-        # check for algorithm-related queries
-        algorithm_keywords = ["algorithm", "sort", "search", "traverse", "complexity", "big o"]
+        # check for algorithm-related queries — "complexity" and "big o" deliberately excluded
+        # here because they are handled by the complexity branch above
+        algorithm_keywords = ["algorithm", "sort", "search", "traverse"]
         if any(keyword in query_lower for keyword in algorithm_keywords):
             return "algorithm"
         
@@ -161,11 +168,6 @@ class TrackA1CS(BaseTrack):
         ds_keywords = ["array", "linked list", "stack", "queue", "tree", "graph", "hash"]
         if any(keyword in query_lower for keyword in ds_keywords):
             return "data_structure"
-        
-        # check for complexity analysis queries
-        complexity_keywords = ["time complexity", "space complexity", "o(n)", "o(log n)", "big o"]
-        if any(keyword in query_lower for keyword in complexity_keywords):
-            return "complexity"
         
         return "general"  # default category
     
@@ -247,8 +249,9 @@ class TrackA1CS(BaseTrack):
             steps=steps
         )
         
-        # cache the detected algorithm
-        self.detected_algorithms.append(algorithm_info)
+        # cache the detected algorithm (cap at 50 to avoid unbounded growth)
+        if len(self.detected_algorithms) < 50:
+            self.detected_algorithms.append(algorithm_info)
         
         # generate enhanced explanation
         enhanced_answer = generate_algorithm_explanation(algorithm_info)

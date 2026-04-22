@@ -411,10 +411,12 @@ class RAGChainManager:
         except Exception as e:
             if self._is_rate_limit_error(e):
                 self._handle_rate_limit_error(e)
-                # retry with new key
+                # retry with new key — mark success/reset backoff on the retry path too
                 chain = self.create_chain(mode=mode, k=k, force_recreate=True)
                 for chunk in chain.stream(question):
                     yield chunk
+                api_key_manager.mark_key_success(self.current_api_key)
+                self._reset_backoff()
             else:
                 raise e
     
@@ -503,3 +505,36 @@ def get_api_usage_stats() -> Dict[str, Any]:
     """
     manager = get_rag_chain_manager()
     return manager.get_api_key_stats()
+
+
+def format_citations(documents: List[Document]) -> List[str]:
+    """
+    Format a list of retrieved documents into citation strings for display.
+    Extracts source filename and content type from document metadata.
+
+    Args:
+        documents (List[Document]): Retrieved document chunks with metadata
+
+    Returns:
+        List[str]: Deduplicated list of formatted citation strings,
+                   e.g. ["lecture_notes.pdf (Lecture Notes)", ...]
+    """
+    seen = set()
+    citations = []
+
+    for doc in documents:
+        source = doc.metadata.get("source", "Unknown source")
+        content_type = doc.metadata.get("content_type", "")
+
+        # build a concise citation label
+        if content_type:
+            label = f"{source} ({content_type})"
+        else:
+            label = source
+
+        # deduplicate — multiple chunks from the same file produce one citation
+        if label not in seen:
+            seen.add(label)
+            citations.append(label)
+
+    return citations

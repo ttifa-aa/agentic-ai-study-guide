@@ -10,7 +10,7 @@ from enum import Enum  # for enumerated types
 
 from config.settings import TrackType, ContentType  # import track and content type definitions
 from core.vector_store import get_vector_store_manager  # vector store access
-from core.rag_chain import RAGChainManager, ChainMode  # rag chain management
+from core.rag_chain import RAGChainManager, ChainMode, get_rag_chain_manager  # rag chain management
 
 
 @dataclass
@@ -36,8 +36,9 @@ class BaseTrack(ABC):
         # get vector store manager for document retrieval
         self.vector_store_manager = get_vector_store_manager()
         
-        # get rag chain manager for question answering
-        self.rag_manager = RAGChainManager()
+        # get rag chain manager for question answering — use singleton to avoid
+        # creating a duplicate LLM client and chain cache per track instance
+        self.rag_manager = get_rag_chain_manager()
         
         # track metadata
         self.track_type: Optional[TrackType] = None

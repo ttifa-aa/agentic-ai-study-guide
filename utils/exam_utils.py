@@ -407,8 +407,9 @@ def track_progress_over_time(progress_history: List[Dict]) -> Dict:
         "trend": trend,                                               # overall trend direction
         "improvement_rate": improvement_rate,                         # rate of change
         "average_score": sum(recent_scores) / len(recent_scores) if recent_scores else 0,  # mean score
-        "total_questions": sum(p.get("questions_attempted", 0) for p in progress_history),  # sum all attempts
-        "total_time_hours": sum(p.get("time_minutes", 0) for p in progress_history) / 60    # convert to hours
+        # note: per-attempt question counts and time are not stored in progress_history entries;
+        # use topic_progress directly for those aggregates (see get_progress_summary)
+        "total_entries": len(progress_history),
     }
 
 
@@ -492,6 +493,9 @@ def analyze_performance_metrics(
     # calculate time efficiency
     metrics["total_time_hours"] = time_spent_minutes / 60
     metrics["avg_time_per_question"] = time_spent_minutes / questions_attempted if questions_attempted > 0 else 0
+    
+    # total_questions is referenced by the dashboard — set it explicitly
+    metrics["total_questions"] = questions_attempted
     
     return metrics  # return all calculated metrics
 

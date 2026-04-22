@@ -9,7 +9,7 @@ from datetime import datetime  # for adding timestamps to messages
 from typing import Dict, Any, List  # type hints for function signatures
 
 # local imports from our custom modules
-from core.rag_chain import ChainMode, format_citations  # rag chain utilities
+from core.rag_chain import ChainMode  # rag chain utilities
 
 
 def render_mode_selector() -> str:

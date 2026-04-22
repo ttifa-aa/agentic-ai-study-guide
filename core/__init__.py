@@ -32,7 +32,6 @@ from core.rag_chain import (
     get_rag_chain_manager,           # singleton accessor for rag chain manager
     ask_question,                    # convenience function to ask questions
     get_api_usage_stats,             # function to get api key usage statistics
-    format_citations                 # function to format source citations
 )
 
 # define what gets exported when someone does "from core import *"
@@ -61,5 +60,4 @@ __all__ = [
     "get_rag_chain_manager",
     "ask_question",
     "get_api_usage_stats",
-    "format_citations"
 ]

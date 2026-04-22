@@ -75,9 +75,9 @@ def render_exam_progress_dashboard():
         # display top 5 weakest areas with progress bars
         # higher weakness score = more attention needed
         for topic, weakness_score in weak_areas[:5]:
-            # progress bar showing weakness level (0.0 to 1.0)
+            # invert: high weakness = low bar fill, so bar reads as "completion" not "weakness"
             st.progress(
-                weakness_score,
+                1.0 - weakness_score,
                 text=f"{topic} (Weakness: {weakness_score:.2f})"
             )
     else:

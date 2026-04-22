@@ -194,11 +194,19 @@ def process_uploaded_documents(uploaded_files: List, content_types: Dict[str, st
             # add all chunks to faiss vector store
             # this creates embeddings and builds the search index
             add_chunks_to_vectorstore(all_chunks)
-            
-            # calculate and store document statistics in session state
-            st.session_state.document_stats = get_document_stats(all_chunks)
+
+            # merge new batch stats with any previously uploaded files
+            # so the document library reflects ALL uploads, not just the latest batch
+            new_stats = get_document_stats(all_chunks)
+            existing_stats = st.session_state.get("document_stats", {})
+            merged_sources = {**existing_stats.get("sources", {}), **new_stats.get("sources", {})}
+            st.session_state.document_stats = {
+                **new_stats,
+                "sources": merged_sources,
+                "total_chunks": existing_stats.get("total_chunks", 0) + new_stats.get("total_chunks", 0),
+            }
             st.session_state.documents_processed = True  # mark docs as processed
-            
+
             # clear rag chain cache so new documents are used for future queries
             if "rag_manager" in st.session_state:
                 st.session_state.rag_manager.clear_cache()

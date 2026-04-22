@@ -49,7 +49,7 @@ CODE_PATTERNS: Dict[str, List[str]] = {
 }
 
 # algorithm complexity patterns - used to detect time complexity from algorithm descriptions
-COMPLEXITY_PATTERNS: Dict[str, str] = {
+COMPLEXITY_PATTERNS: Dict[str, List[str]] = {
     "O(1)": ["constant", "array access", "hash lookup"],
     "O(log n)": ["binary search", "balanced tree", "divide"],
     "O(n)": ["linear", "traversal", "single loop"],
@@ -118,6 +118,10 @@ class SystemConfig:
     
     MAX_FILE_SIZE_MB: int = 50
     # maximum file size in megabytes - prevents memory issues with very large documents
+    
+    # Embedding model - used for converting text chunks to vectors
+    EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
+    # huggingface embedding model name - small but effective for semantic search
     
     # Progress Tracking - database and caching settings
     DATABASE_PATH: str = "data/progress.db"
@@ -363,8 +367,18 @@ config = SystemConfig()
 # creates a single instance of systemconfig that can be imported and used throughout the application
 
 # create API key manager instance - singleton for key management
-api_key_manager = APIKeyManager()
-# manages multiple groq api keys with automatic cycling
+# wrapped in try/except so a missing .env doesn't crash at import time;
+# app.py's check_api_keys() + st.stop() is the intended user-facing gate.
+try:
+    api_key_manager = APIKeyManager()
+except ValueError:
+    # no keys found — build a shell instance so the module can be imported safely.
+    # app.py will halt before any LLM call is attempted.
+    api_key_manager = APIKeyManager.__new__(APIKeyManager)
+    api_key_manager.key_prefix = "GROQ_API_KEY"
+    api_key_manager.keys = []
+    api_key_manager.current_index = 0
+    api_key_manager.key_status = {}
 
 # environment variables
 # GROQ_API_KEY is kept for backward compatibility
@@ -402,9 +416,8 @@ def handle_api_failure(current_key: str = None) -> str:
     
     return api_key_manager.rotate_to_next_key()
 
-# embedding model configuration
-EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
-# huggingface embedding model name - small but effective for semantic search
+# embedding model configuration — canonical value lives in config.EMBEDDING_MODEL
+EMBEDDING_MODEL: str = config.EMBEDDING_MODEL
 
 # track-specific display names - user-friendly names shown in the ui
 TRACK_DISPLAY_NAMES: Dict[TrackType, str] = {
