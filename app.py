@@ -8,25 +8,25 @@ to create a complete learning companion for exam preparation and subject mastery
 import streamlit as st  # streamlit for building the web interface
 import os  # for accessing environment variables like api keys
 from dotenv import load_dotenv  # to load environment variables from .env file
-import time  # for adding delays and measuring processing time
 from datetime import datetime  # for timestamp handling in chat history
 
 # local imports - our custom modules
 from config.settings import (  # configuration constants and track definitions
-    config,
     TrackType,
     TRACK_DISPLAY_NAMES,
     TRACK_DESCRIPTIONS
 )
-from core.vector_store import get_vector_store_manager
-from core.rag_chain import get_rag_chain_manager
+from core.rag_chain import (  # rag chain management
+    get_rag_chain_manager,
+    ChainMode
+)
 from tracks.track_a1_cs import TrackA1CS  # computer science track
 from tracks.track_a2_exam import TrackA2Exam  # exam preparation track
 
-# components — modular UI layer (replaces inline render functions)
-from components.sidebar import render_sidebar
-from components.chat_interface import render_chat_interface
-from components.progress_tracker import render_progress_dashboard, render_cs_dashboard
+# component imports - ui components
+from components.sidebar import render_sidebar  # sidebar with document management
+from components.chat_interface import render_chat_interface  # chat interface
+from components.progress_tracker import render_progress_dashboard, render_cs_dashboard  # dashboards
 
 # load environment variables from .env file
 # this includes groq_api_key needed for llm access
@@ -94,6 +94,7 @@ def initialize_session_state():
     
     # vector store and document management
     if "vector_store_manager" not in st.session_state:
+        from core.vector_store import get_vector_store_manager
         st.session_state.vector_store_manager = get_vector_store_manager()
         # singleton vector store manager instance
     
@@ -130,10 +131,6 @@ def initialize_session_state():
         # stores learning progress data for exam track
     
     # ui state management
-    if "sidebar_collapsed" not in st.session_state:
-        st.session_state.sidebar_collapsed = False
-        # track sidebar collapse state
-    
     if "processing_in_progress" not in st.session_state:
         st.session_state.processing_in_progress = False
         # flag to prevent multiple simultaneous processing operations
@@ -142,62 +139,71 @@ def initialize_session_state():
 def render_track_selection():
     """
     Render the track selection interface.
-    Allows user to choose between Track A1 (CS) and Track A2 (Exam).
+    allows user to choose between track a1 (cs) and track a2 (exam).
     """
     st.title("Academic Assistant")
     st.markdown("---")
-
+    
     st.header("Choose Your Learning Track")
     st.markdown("""
     Select the track that best matches your learning goals.
     You can switch tracks later, but your uploaded documents will be cleared.
     """)
-
+    
+    # create two columns for track selection
     col1, col2 = st.columns(2)
-
+    
     with col1:
         st.subheader("Track A1")
         st.markdown(TRACK_DESCRIPTIONS[TrackType.TRACK_A1_CS])
+        
         if st.button("Select Track A1", type="primary", use_container_width=True):
+            # initialize computer science track
             st.session_state.current_track = TrackA1CS()
             st.session_state.track_type = TrackType.TRACK_A1_CS
             st.session_state.track_selected = True
-            st.rerun()
-
+            st.rerun()  # rerun to show main interface
+    
     with col2:
         st.subheader("Track A2")
         st.markdown(TRACK_DESCRIPTIONS[TrackType.TRACK_A2_EXAM])
+        
         if st.button("Select Track A2", type="primary", use_container_width=True):
+            # initialize exam preparation track
             st.session_state.current_track = TrackA2Exam()
             st.session_state.track_type = TrackType.TRACK_A2_EXAM
             st.session_state.track_selected = True
-            st.rerun()
+            st.rerun()  # rerun to show main interface
 
 
 def main():
     """
     Main application entry point.
-    Sets up the Streamlit interface and handles routing.
+    sets up the streamlit interface and handles routing.
     """
+    # page configuration
     st.set_page_config(
         page_title="Academic Assistant",
         page_icon="🎓",
         layout="wide",
         initial_sidebar_state="expanded"
     )
-
+    
+    # initialize session state
     initialize_session_state()
-
+    
+    # main routing logic
     if not st.session_state.track_selected:
+        # show track selection screen
         render_track_selection()
     else:
-        # sidebar handles document upload, library, API key status, and track switching
+        # show main application interface
         render_sidebar()
-
-        # main content area — chat interface from components/
+        
+        # main content area
         render_chat_interface()
-
-        # track-specific dashboards shown below the chat once docs are loaded
+        
+        # track-specific dashboards (only show when documents are processed)
         if st.session_state.documents_processed:
             if st.session_state.track_type == TrackType.TRACK_A1_CS:
                 render_cs_dashboard()

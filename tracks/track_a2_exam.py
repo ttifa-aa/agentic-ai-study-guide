@@ -1,18 +1,17 @@
 """
-track A2: comprehensive exam preparation assistant.
-specialized track for exam preparation with study plans and progress tracking.
+Track A2: Comprehensive Exam Preparation Assistant.
+Specialized track for exam preparation with study plans and progress tracking.
 """
 
+import re  # regular expressions for pattern matching in exam paper parsing
 import json  # for serializing progress data
 from typing import Dict, List, Optional, Any, Tuple  # type hints for function signatures
 from datetime import datetime, timedelta  # for date calculations
-import re  # for regex pattern matching in exam question parsing
+from pathlib import Path  # for file path handling
 
 # local imports
-from core.rag_chain import ChainMode
 from tracks.base_track import BaseTrack, TrackFeatures  # base track class
 from config.settings import TrackType, ContentType, EXAM_PATTERNS  # exam configuration
-from database.db_manager import get_db_manager  # persistent storage for progress
 from utils.exam_utils import (  # exam utility functions
     analyze_exam_pattern,
     extract_questions_from_paper,
@@ -41,50 +40,25 @@ class TrackA2Exam(BaseTrack):
         """Initialize the exam preparation track."""
         # call parent class initializer
         super().__init__()
-
+        
         # set track type
         self.track_type = TrackType.TRACK_A2_EXAM
-
+        
         # initialize track features
         self.features = self.get_features()
-
-        # persistent storage — loads existing records from SQLite
-        self.db = get_db_manager()
-
-        # progress tracking data — restored from DB so it survives page refreshes
-        self.topic_progress: Dict[str, TopicProgress] = self._load_topic_progress()
+        
+        # progress tracking data
+        self.topic_progress: Dict[str, TopicProgress] = {}
         self.progress_history: List[Dict] = []
         self.study_plans: List[StudyPlan] = []
         self.extracted_questions: List[ExamQuestion] = []
-
+        
         # exam pattern analysis
         self.detected_exam_pattern: Optional[Dict] = None
-
+        
         # session metrics
         self.session_start_time = datetime.now()
         self.questions_answered = 0
-
-    def _load_topic_progress(self) -> Dict[str, TopicProgress]:
-        """
-        Load topic progress from the database on track initialisation.
-        Returns an empty dict if the DB has no records yet.
-        """
-        try:
-            rows = self.db.get_all_topic_progress()
-            progress = {}
-            for row in rows.values():
-                tp = TopicProgress(topic_name=row["topic_name"])
-                tp.questions_attempted = row.get("questions_attempted", 0)
-                tp.questions_correct = row.get("questions_correct", 0)
-                tp.time_spent_minutes = row.get("time_spent_minutes", 0)
-                tp.mastery_level = row.get("mastery_level", 0.0)
-                last = row.get("last_practiced")
-                tp.last_practiced = datetime.fromisoformat(last) if last else None
-                progress[tp.topic_name] = tp
-            return progress
-        except Exception:
-            # DB not yet initialised or schema mismatch — start fresh
-            return {}
     
     def get_features(self) -> TrackFeatures:
         """
@@ -488,13 +462,13 @@ class TrackA2Exam(BaseTrack):
         
         progress = self.topic_progress[topic]
         progress.questions_attempted += 1
-
+        
         if is_correct is not None and is_correct:
             progress.questions_correct += 1
-
+        
         progress.time_spent_minutes += time_spent
         progress.last_practiced = datetime.now()
-
+        
         # recalculate mastery
         consistency_days = (datetime.now() - self.session_start_time).days
         progress.mastery_level = calculate_topic_mastery(
@@ -503,22 +477,8 @@ class TrackA2Exam(BaseTrack):
             progress.time_spent_minutes,
             consistency_days
         )
-
-        # persist to database so progress survives page refreshes
-        try:
-            self.db.save_topic_progress(
-                topic_name=topic,
-                questions_attempted=progress.questions_attempted,
-                questions_correct=progress.questions_correct,
-                time_spent_minutes=progress.time_spent_minutes,
-                mastery_level=progress.mastery_level,
-                last_practiced=progress.last_practiced
-            )
-        except Exception:
-            # non-fatal — in-memory data is still accurate for this session
-            pass
-
-        # add to in-memory history for trend analysis within this session
+        
+        # add to history
         self.progress_history.append({
             "timestamp": datetime.now().isoformat(),
             "topic": topic,
@@ -742,7 +702,7 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
         
         for topic, progress in self.topic_progress.items():
             mastery_percent = progress.mastery_level * 100
-            status = "✅ Mastered" if mastery_percent >= 80 else "🟡 In Progress" if mastery_percent >= 60 else "🔴 Needs Work"
+            status = "Mastered" if mastery_percent >= 80 else "In Progress" if mastery_percent >= 60 else "Needs Work"
             report += f"\n### {topic}\n"
             report += f"- Status: {status} ({mastery_percent:.1f}%)\n"
             report += f"- Questions: {progress.questions_correct}/{progress.questions_attempted} correct\n"

@@ -411,12 +411,10 @@ class RAGChainManager:
         except Exception as e:
             if self._is_rate_limit_error(e):
                 self._handle_rate_limit_error(e)
-                # retry with new key — mark success/reset backoff on the retry path too
+                # retry with new key
                 chain = self.create_chain(mode=mode, k=k, force_recreate=True)
                 for chunk in chain.stream(question):
                     yield chunk
-                api_key_manager.mark_key_success(self.current_api_key)
-                self._reset_backoff()
             else:
                 raise e
     
@@ -444,6 +442,47 @@ class RAGChainManager:
         # also reset backoff when clearing cache
         self._reset_backoff()
 
+
+# =============================================================================
+# Format Citations Function
+# =============================================================================
+
+def format_citations(docs: List[Document]) -> str:
+    """
+    Format document citations for display.
+    
+    Args:
+        docs (List[Document]): Retrieved documents used in answer
+    
+    Returns:
+        str: Formatted citation string
+    """
+    if not docs:
+        return "No sources cited."
+    
+    citations = []  # list for citation strings
+    seen_sources = set()  # track unique sources to avoid duplicates
+    
+    for doc in docs:
+        source = doc.metadata.get("source", "Unknown")
+        content_type = doc.metadata.get("content_type", "Unknown")
+        
+        # create unique identifier for source
+        source_id = f"{source} ({content_type})"
+        
+        if source_id not in seen_sources:
+            citations.append(f"- {source_id}")
+            seen_sources.add(source_id)
+    
+    if citations:
+        return "**Sources:**\n" + "\n".join(citations)
+    else:
+        return "**Sources:** No specific sources cited."
+
+
+# =============================================================================
+# Singleton Instance
+# =============================================================================
 
 # singleton instance for application-wide use
 _rag_chain_manager: Optional[RAGChainManager] = None
@@ -505,36 +544,3 @@ def get_api_usage_stats() -> Dict[str, Any]:
     """
     manager = get_rag_chain_manager()
     return manager.get_api_key_stats()
-
-
-def format_citations(documents: List[Document]) -> List[str]:
-    """
-    Format a list of retrieved documents into citation strings for display.
-    Extracts source filename and content type from document metadata.
-
-    Args:
-        documents (List[Document]): Retrieved document chunks with metadata
-
-    Returns:
-        List[str]: Deduplicated list of formatted citation strings,
-                   e.g. ["lecture_notes.pdf (Lecture Notes)", ...]
-    """
-    seen = set()
-    citations = []
-
-    for doc in documents:
-        source = doc.metadata.get("source", "Unknown source")
-        content_type = doc.metadata.get("content_type", "")
-
-        # build a concise citation label
-        if content_type:
-            label = f"{source} ({content_type})"
-        else:
-            label = source
-
-        # deduplicate — multiple chunks from the same file produce one citation
-        if label not in seen:
-            seen.add(label)
-            citations.append(label)
-
-    return citations
