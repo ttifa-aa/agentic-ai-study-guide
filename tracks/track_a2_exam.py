@@ -1,6 +1,6 @@
 """
-Track A2: Comprehensive Exam Preparation Assistant.
-Specialized track for exam preparation with study plans and progress tracking.
+track A2: comprehensive exam preparation assistant.
+specialized track for exam preparation with study plans and progress tracking.
 """
 
 import re  # regular expressions for pattern matching in exam paper parsing
@@ -10,6 +10,7 @@ from datetime import datetime, timedelta  # for date calculations
 from pathlib import Path  # for file path handling
 
 # local imports
+from core.rag_chain import ChainMode
 from tracks.base_track import BaseTrack, TrackFeatures  # base track class
 from config.settings import TrackType, ContentType, EXAM_PATTERNS  # exam configuration
 from utils.exam_utils import (  # exam utility functions
