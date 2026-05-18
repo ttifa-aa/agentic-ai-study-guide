@@ -3,14 +3,13 @@ Track A1: Computer Science Subject Guide.
 Specialized track for CS topics with code detection and algorithm analysis.
 """
 
-import re  # regular expressions for code pattern matching
-from typing import Dict, List, Optional, Any, Tuple  # type hints for function signatures
-from datetime import datetime  # for timestamp handling
+import re
+from typing import Dict, List, Optional, Any, Tuple
+from datetime import datetime
 
-# local imports
-from tracks.base_track import BaseTrack, TrackFeatures  # base track class
-from config.settings import TrackType, ContentType, CS_SUBJECTS  # cs-specific configuration
-from utils.cs_utils import (  # cs utility functions
+from tracks.base_track import BaseTrack, TrackFeatures
+from config.settings import TrackType, ContentType, CS_SUBJECTS
+from utils.cs_utils import (
     detect_code_language,
     extract_code_blocks,
     detect_algorithm_type,
@@ -24,8 +23,8 @@ from utils.cs_utils import (  # cs utility functions
     AlgorithmInfo,
     AlgorithmType
 )
-from prompts.base_prompts import CS_SPECIFIC_PROMPT  # cs-specific prompt template
-
+from prompts.base_prompts import CS_SPECIFIC_PROMPT
+from core.rag_chain import ChainMode
 
 class TrackA1CS(BaseTrack):
     """
@@ -35,20 +34,11 @@ class TrackA1CS(BaseTrack):
     
     def __init__(self):
         """Initialize the CS track with specialized features."""
-        # call parent class initializer
         super().__init__()
-        
-        # set track type
         self.track_type = TrackType.TRACK_A1_CS
-        
-        # initialize track features
         self.features = self.get_features()
-        
-        # cache for detected code blocks and algorithms
         self.detected_code_blocks: List[CodeBlock] = []
         self.detected_algorithms: List[AlgorithmInfo] = []
-        
-        # track cs subjects identified in documents
         self.identified_subjects: Dict[str, float] = {}
     
     def get_features(self) -> TrackFeatures:
@@ -61,13 +51,13 @@ class TrackA1CS(BaseTrack):
         return TrackFeatures(
             name="Computer Science Subject Guide",
             description="""
-            Specialized track for Computer Science topics with:
-            - CS-specific content processing with code examples and algorithms
-            - Programming language detection and syntax highlighting
-            - Algorithm explanation with step-by-step breakdowns
-            - Database, Networking, OS specific content understanding
-            - Indian university CS curriculum patterns
-            """,
+Specialized track for Computer Science topics with:
+- CS-specific content processing with code examples and algorithms
+- Programming language detection and syntax highlighting
+- Algorithm explanation with step-by-step breakdowns
+- Database, Networking, OS specific content understanding
+- Indian university CS curriculum patterns
+""",
             supported_content_types=[
                 ContentType.LECTURE_NOTES.value,
                 ContentType.TEXTBOOK.value,
@@ -91,15 +81,12 @@ class TrackA1CS(BaseTrack):
         
         Args:
             prompt_type (str): Type of prompt needed (cs_explain, algorithm_analysis, etc.)
-        
+            
         Returns:
             str: Specialized prompt template
         """
-        # return from features or generate dynamically
         if prompt_type in self.features.special_prompts:
             return self.features.special_prompts[prompt_type]
-        
-        # default to cs-specific prompt
         return CS_SPECIFIC_PROMPT
     
     def process_query(
@@ -115,14 +102,12 @@ class TrackA1CS(BaseTrack):
             query (str): User's query or question
             query_type (str): Type of query (explain, code, algorithm, etc.)
             **kwargs: Additional parameters
-        
+            
         Returns:
             Dict[str, Any]: Response with cs-specific metadata
         """
-        # detect query category
         detected_category = self._detect_query_category(query)
         
-        # process based on query category
         if detected_category == "code":
             return self._handle_code_query(query, **kwargs)
         elif detected_category == "algorithm":
@@ -140,33 +125,29 @@ class TrackA1CS(BaseTrack):
         
         Args:
             query (str): User's query
-        
+            
         Returns:
             str: Query category (code, algorithm, data_structure, complexity, general)
         """
         query_lower = query.lower()
         
-        # check for code-related queries
         code_keywords = ["code", "implement", "write a program", "function", "class", "method"]
         if any(keyword in query_lower for keyword in code_keywords):
             return "code"
         
-        # check for algorithm-related queries
         algorithm_keywords = ["algorithm", "sort", "search", "traverse", "complexity", "big o"]
         if any(keyword in query_lower for keyword in algorithm_keywords):
             return "algorithm"
         
-        # check for data structure queries
         ds_keywords = ["array", "linked list", "stack", "queue", "tree", "graph", "hash"]
         if any(keyword in query_lower for keyword in ds_keywords):
             return "data_structure"
         
-        # check for complexity analysis queries
         complexity_keywords = ["time complexity", "space complexity", "o(n)", "o(log n)", "big o"]
         if any(keyword in query_lower for keyword in complexity_keywords):
             return "complexity"
         
-        return "general"  # default category
+        return "general"
     
     def _handle_code_query(self, query: str, **kwargs) -> Dict[str, Any]:
         """
@@ -175,37 +156,28 @@ class TrackA1CS(BaseTrack):
         Args:
             query (str): Code-related query
             **kwargs: Additional parameters
-        
+            
         Returns:
             Dict[str, Any]: Response with code explanation
         """
-        # use cs-specific prompt for code questions
-        prompt = self.get_specialized_prompt("cs_explain")
+        answer = self.rag_manager.invoke(query, mode=ChainMode.STUDY)
         
-        # get answer from rag chain
-        answer = self.rag_manager.invoke(
-            query,
-            mode=ChainMode.STUDY
-        )
-        
-        # detect code language from query or answer
         detected_language = detect_code_language(query) or detect_code_language(answer) or "text"
-        
-        # extract any code blocks from the answer
         code_blocks = extract_code_blocks(answer)
         
-        # format code blocks with syntax highlighting
         formatted_answer = answer
         for code_block in code_blocks:
             formatted_block = format_code_with_syntax(code_block.code, code_block.language)
             formatted_answer = formatted_answer.replace(code_block.code, formatted_block)
         
-        # prepare metadata
+        cs_subjects_result = identify_cs_subject(query + answer)
+        cs_subjects_dict = {subject: confidence for subject, confidence in cs_subjects_result}
+        
         metadata = {
             "query_category": "code",
             "detected_language": detected_language,
             "code_blocks_found": len(code_blocks),
-            "cs_subjects": identify_cs_subject(query + answer)
+            "cs_subjects": cs_subjects_dict
         }
         
         return self.format_response(formatted_answer, metadata=metadata)
@@ -217,42 +189,28 @@ class TrackA1CS(BaseTrack):
         Args:
             query (str): Algorithm-related query
             **kwargs: Additional parameters
-        
+            
         Returns:
             Dict[str, Any]: Response with algorithm analysis
         """
-        # get answer from rag chain
-        answer = self.rag_manager.invoke(
-            query,
-            mode=ChainMode.STUDY
-        )
+        answer = self.rag_manager.invoke(query, mode=ChainMode.STUDY)
         
-        # detect algorithm type
         algo_type = detect_algorithm_type(query + answer)
-        
-        # analyze complexity
         time_complexity, space_complexity = analyze_algorithm_complexity(query + answer)
-        
-        # extract algorithm steps
         steps = extract_algorithm_steps(answer)
         
-        # create algorithm info object
         algorithm_info = AlgorithmInfo(
             name=self._extract_algorithm_name(query),
             algorithm_type=algo_type or AlgorithmType.ITERATIVE,
             complexity_time=time_complexity,
             complexity_space=space_complexity,
-            description=answer[:200] + "...",  # first 200 chars as description
+            description=answer[:200] + "...",
             steps=steps
         )
         
-        # cache the detected algorithm
         self.detected_algorithms.append(algorithm_info)
-        
-        # generate enhanced explanation
         enhanced_answer = generate_algorithm_explanation(algorithm_info)
         
-        # prepare metadata
         metadata = {
             "query_category": "algorithm",
             "algorithm_type": algo_type.value if algo_type else "unknown",
@@ -270,24 +228,17 @@ class TrackA1CS(BaseTrack):
         Args:
             query (str): Data structure query
             **kwargs: Additional parameters
-        
+            
         Returns:
             Dict[str, Any]: Response with data structure information
         """
-        # get answer from rag chain
-        answer = self.rag_manager.invoke(
-            query,
-            mode=ChainMode.STUDY
-        )
-        
-        # extract data structure information
+        answer = self.rag_manager.invoke(query, mode=ChainMode.STUDY)
         ds_info = extract_data_structure_info(query + answer)
         
-        # prepare metadata
         metadata = {
             "query_category": "data_structure",
             "data_structures_mentioned": list(ds_info.keys()),
-            "cs_subjects": identify_cs_subject(query)
+            "cs_subjects": dict(identify_cs_subject(query))
         }
         
         return self.format_response(answer, metadata=metadata)
@@ -299,20 +250,13 @@ class TrackA1CS(BaseTrack):
         Args:
             query (str): Complexity query
             **kwargs: Additional parameters
-        
+            
         Returns:
             Dict[str, Any]: Response with complexity analysis
         """
-        # get answer from rag chain
-        answer = self.rag_manager.invoke(
-            query,
-            mode=ChainMode.STUDY
-        )
-        
-        # analyze complexity
+        answer = self.rag_manager.invoke(query, mode=ChainMode.STUDY)
         time_complexity, space_complexity = analyze_algorithm_complexity(query + answer)
         
-        # prepare metadata
         metadata = {
             "query_category": "complexity",
             "time_complexity": time_complexity,
@@ -328,24 +272,19 @@ class TrackA1CS(BaseTrack):
         Args:
             query (str): General cs query
             **kwargs: Additional parameters
-        
+            
         Returns:
             Dict[str, Any]: Response with cs context
         """
-        # get answer from rag chain
-        answer = self.rag_manager.invoke(
-            query,
-            mode=ChainMode.STUDY
-        )
+        answer = self.rag_manager.invoke(query, mode=ChainMode.STUDY)
         
-        # identify relevant cs subjects
-        subjects = identify_cs_subject(query + answer)
+        subjects_result = identify_cs_subject(query + answer)
+        primary_subject = subjects_result[0][0] if subjects_result else "Unknown"
         
-        # prepare metadata
         metadata = {
             "query_category": "general",
-            "cs_subjects": subjects,
-            "primary_subject": subjects[0][0] if subjects else "Unknown"
+            "cs_subjects": {subject: conf for subject, conf in subjects_result},
+            "primary_subject": primary_subject
         }
         
         return self.format_response(answer, metadata=metadata)
@@ -356,11 +295,10 @@ class TrackA1CS(BaseTrack):
         
         Args:
             query (str): User query
-        
+            
         Returns:
             str: Extracted algorithm name
         """
-        # common algorithm name patterns
         patterns = [
             r'(?:explain|what is|describe)\s+(\w+\s*(?:sort|search|algorithm))',
             r'(\w+\s*(?:sort|search))\s+algorithm',
@@ -380,7 +318,7 @@ class TrackA1CS(BaseTrack):
         
         Args:
             document_text (str): Document text to analyze
-        
+            
         Returns:
             Dict[str, Any]: Analysis results
         """
@@ -392,7 +330,6 @@ class TrackA1CS(BaseTrack):
             "complexity_mentions": []
         }
         
-        # extract code blocks
         code_blocks = extract_code_blocks(document_text)
         analysis["code_blocks"] = [
             {
@@ -403,23 +340,18 @@ class TrackA1CS(BaseTrack):
             for block in code_blocks
         ]
         
-        # identify cs subjects
         subjects = identify_cs_subject(document_text)
         analysis["cs_subjects"] = subjects
         
-        # extract data structure information
         ds_info = extract_data_structure_info(document_text)
         analysis["data_structures"] = ds_info
         
-        # cache detected code blocks
         self.detected_code_blocks.extend(code_blocks)
         
-        # update identified subjects
         for subject, confidence in subjects:
             if subject not in self.identified_subjects:
                 self.identified_subjects[subject] = confidence
             else:
-                # average confidence for multiple mentions
                 self.identified_subjects[subject] = (self.identified_subjects[subject] + confidence) / 2
         
         return analysis
@@ -450,25 +382,21 @@ class TrackA1CS(BaseTrack):
         Args:
             description (str): Description of what code should do
             language (str): Target programming language
-        
+            
         Returns:
             Dict[str, Any]: Generated code with metadata
         """
-        # create code generation prompt
         prompt = f"""
-        Generate {language} code for the following description.
-        Include comments explaining key steps.
-        Format as a complete, runnable code snippet.
+Generate {language} code for the following description.
+Include comments explaining key steps.
+Format as a complete, runnable code snippet.
+
+Description: {description}
+
+{language.upper()} Code:
+"""
         
-        Description: {description}
-        
-        {language.upper()} Code:
-        """
-        
-        # use llm directly for code generation
         code = self.rag_manager.llm.invoke(prompt).content
-        
-        # format with syntax highlighting
         formatted_code = format_code_with_syntax(code, language)
         
         return {

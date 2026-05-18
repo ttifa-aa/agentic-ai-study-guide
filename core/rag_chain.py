@@ -4,50 +4,42 @@ Builds and manages the pipeline for answering questions using retrieved context.
 Includes multi-API-key support with automatic rotation on rate limits.
 """
 
-import time  # for delays and rate limit handling
-from typing import Callable, Optional, Dict, Any, List, Tuple  # type hints for function signatures
-from enum import Enum  # for chain type enumeration
+import time
+from typing import Callable, Optional, Dict, Any, List, Tuple
+from enum import Enum
 
-# langchain core imports for building rag pipelines
-from langchain_core.prompts import ChatPromptTemplate  # for creating prompt templates
-from langchain_core.runnables import RunnablePassthrough, RunnableParallel  # for chain composition
-from langchain_core.output_parsers import StrOutputParser  # parses llm output to string
-from langchain_core.documents import Document  # base document class
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough, RunnableParallel
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.documents import Document
+from langchain_groq import ChatGroq
 
-# langchain groq for llm integration
-from langchain_groq import ChatGroq  # groq's fast llm inference
-
-# local imports
-from config.settings import (  # system configuration
-    config, 
-    api_key_manager, 
-    get_current_api_key, 
+from config.settings import (
+    config,
+    api_key_manager,
+    get_current_api_key,
     handle_api_failure
 )
-from core.vector_store import get_vector_store_manager  # vector store access
-from prompts.base_prompts import (  # prompt templates
+from core.vector_store import get_vector_store_manager
+from prompts.base_prompts import (
     STUDY_MODE_PROMPT,
     EXAM_MODE_PROMPT,
     QUICK_REVISION_PROMPT
 )
 
-
 class ChainMode(str, Enum):
     """enumeration of rag chain operation modes."""
-    STUDY = "study"          # comprehensive study mode with detailed explanations
-    EXAM = "exam"            # exam mode with step-by-step solutions
-    QUICK = "quick"          # quick revision mode with concise answers
-
+    STUDY = "study"
+    EXAM = "exam"
+    QUICK = "quick"
 
 class RateLimitError(Exception):
     """custom exception for rate limit errors."""
     pass
 
-
 class TokenLimitError(Exception):
     """custom exception for token limit errors."""
     pass
-
 
 class RAGChainManager:
     """
@@ -61,24 +53,14 @@ class RAGChainManager:
         initialize the RAG chain manager.
         uses api_key_manager for automatic key rotation.
         """
-        # initialize llm with current api key
         self.current_api_key = get_current_api_key()
         self.llm = self._create_llm(self.current_api_key)
-        
-        # cache for storing created chains by mode
-        # avoids recreating chains for each query
         self._chain_cache: Dict[ChainMode, Any] = {}
-        
-        # reference to vector store manager for retrieval
         self.vector_store_manager = get_vector_store_manager()
-        
-        # track key rotation statistics
         self.key_rotations: int = 0
         self.last_key_rotation_time: Optional[float] = None
-        
-        # track rate limit errors for backoff
-        self.rate_limit_backoff: float = 1.0  # initial backoff in seconds
-        self.max_backoff: float = 60.0  # maximum backoff in seconds
+        self.rate_limit_backoff: float = 1.0
+        self.max_backoff: float = 60.0
     
     def _create_llm(self, api_key: str) -> ChatGroq:
         """
@@ -86,15 +68,15 @@ class RAGChainManager:
         
         args:
             api_key (str): Groq API key to use
-        
+            
         returns:
             ChatGroq: Configured LLM instance
         """
         return ChatGroq(
-            model=config.DEFAULT_MODEL,           # model name from config
-            api_key=api_key,                      # api key for authentication
-            temperature=config.DEFAULT_TEMPERATURE,  # temperature for response randomness
-            max_tokens=config.MAX_TOKENS          # maximum response length
+            model=config.DEFAULT_MODEL,
+            api_key=api_key,
+            temperature=config.DEFAULT_TEMPERATURE,
+            max_tokens=config.MAX_TOKENS
         )
     
     def _rotate_api_key(self) -> None:
@@ -102,20 +84,11 @@ class RAGChainManager:
         rotate to the next working API key and recreate the LLM.
         """
         old_key_masked = api_key_manager._mask_key(self.current_api_key)
-        
-        # mark current key as failed and get next key
         self.current_api_key = handle_api_failure(self.current_api_key)
-        
-        # recreate llm with new key
         self.llm = self._create_llm(self.current_api_key)
-        
-        # update rotation statistics
         self.key_rotations += 1
         self.last_key_rotation_time = time.time()
-        
-        # clear chain cache since llm has changed
         self._chain_cache.clear()
-        
         new_key_masked = api_key_manager._mask_key(self.current_api_key)
         print(f"[RAGChainManager] Rotated API key: {old_key_masked} -> {new_key_masked}")
     
@@ -126,13 +99,9 @@ class RAGChainManager:
         args:
             error (Exception): The rate limit error
         """
-        # increase backoff exponentially (capped at max_backoff)
         self.rate_limit_backoff = min(self.rate_limit_backoff * 2, self.max_backoff)
-        
         print(f"[RAGChainManager] Rate limit hit. Waiting {self.rate_limit_backoff:.1f}s...")
         time.sleep(self.rate_limit_backoff)
-        
-        # rotate to next key
         self._rotate_api_key()
     
     def _reset_backoff(self) -> None:
@@ -147,7 +116,7 @@ class RAGChainManager:
         
         args:
             error (Exception): The error to check
-        
+            
         returns:
             bool: True if it's a rate limit error
         """
@@ -168,7 +137,7 @@ class RAGChainManager:
         
         args:
             error (Exception): The error to check
-        
+            
         returns:
             bool: True if it's a token limit error
         """
@@ -188,22 +157,16 @@ class RAGChainManager:
         
         args:
             docs (List[Document]): Retrieved document chunks
-        
+            
         returns:
             str: Formatted context string with source tags
         """
-        formatted_docs = []  # list to store formatted document strings
-        
+        formatted_docs = []
         for doc in docs:
-            # get metadata for source attribution
             content_type = doc.metadata.get("content_type", "Unknown")
             source = doc.metadata.get("source", "Unknown")
-            
-            # format with content type tag for attribution
             formatted_doc = f"[{content_type}] {doc.page_content}"
             formatted_docs.append(formatted_doc)
-        
-        # join all formatted documents with double newline separator
         return "\n\n".join(formatted_docs)
     
     def _get_prompt_for_mode(self, mode: ChainMode) -> ChatPromptTemplate:
@@ -212,7 +175,7 @@ class RAGChainManager:
         
         args:
             mode (ChainMode): Operation mode (study, exam, or quick)
-        
+            
         returns:
             ChatPromptTemplate: Prompt template for the mode
         """
@@ -238,21 +201,16 @@ class RAGChainManager:
             mode (ChainMode): Operation mode for the chain
             k (int, optional): Number of documents to retrieve
             force_recreate (bool): Force recreation even if cached
-        
+            
         returns:
             Runnable: Configured RAG chain ready for invocation
         """
-        # return cached chain if available and not forced to recreate
         if mode in self._chain_cache and not force_recreate:
             return self._chain_cache[mode]
         
-        # get retriever from vector store
         retriever = self.vector_store_manager.get_retriever(k=k)
-        
-        # get appropriate prompt for the mode
         prompt = self._get_prompt_for_mode(mode)
         
-        # build the rag chain using langchain's runnable composition
         rag_chain = (
             RunnableParallel(
                 context=retriever | self._format_docs_for_context,
@@ -263,10 +221,8 @@ class RAGChainManager:
             | StrOutputParser()
         )
         
-        # cache the created chain for future use
         self._chain_cache[mode] = rag_chain
-        
-        return rag_chain  # return the configured chain
+        return rag_chain
     
     def invoke_with_retry(
         self,
@@ -283,15 +239,13 @@ class RAGChainManager:
             mode (ChainMode): Operation mode
             k (int, optional): Number of documents to retrieve
             max_retries (int, optional): Maximum retry attempts (default from config)
-        
+            
         returns:
             Tuple[str, Dict[str, Any]]: (answer, metadata) including key usage info
         """
         max_retries = max_retries or (len(api_key_manager.keys) * 2)
-        # allow up to 2 attempts per key
-        
         attempts = 0
-        keys_tried = set()  # track which keys we've tried
+        keys_tried = set()
         metadata = {
             "key_rotations": 0,
             "keys_used": [],
@@ -305,59 +259,40 @@ class RAGChainManager:
             keys_tried.add(current_key_masked)
             
             try:
-                # create or get cached chain
                 chain = self.create_chain(mode=mode, k=k)
-                
-                # invoke chain with question
                 answer = chain.invoke(question)
-                
-                # mark key as successful (resets failure count)
                 api_key_manager.mark_key_success(self.current_api_key)
-                
-                # reset backoff on success
                 self._reset_backoff()
-                
-                # update metadata
                 metadata.update({
                     "attempts": attempts,
                     "keys_used": list(keys_tried),
                     "key_rotations": self.key_rotations,
                     "final_key": current_key_masked
                 })
-                
                 return answer, metadata
-                
+            
             except Exception as e:
                 print(f"[RAGChainManager] Attempt {attempts} failed: {type(e).__name__}: {str(e)[:100]}")
                 
                 if self._is_rate_limit_error(e):
-                    # rate limit - rotate key and wait
                     self._handle_rate_limit_error(e)
                     metadata["key_rotations"] = self.key_rotations
                     metadata["backoff_seconds"] = self.rate_limit_backoff
-                    
                 elif self._is_token_limit_error(e):
-                    # token limit - try with reduced context
                     print("[RAGChainManager] Token limit exceeded. Reducing context size...")
-                    k = max(2, (k or config.RETRIEVAL_K) - 1)  # reduce retrieved chunks
-                    # don't rotate key for token limit (key is fine, just context too large)
-                    
+                    k = max(2, (k or config.RETRIEVAL_K) - 1)
                 else:
-                    # other error - might be key-related, try rotating
-                    print(f"[RAGChainManager] Unknown error. Rotating key...")
+                    print("[RAGChainManager] Unknown error. Rotating key...")
                     self._rotate_api_key()
                     metadata["key_rotations"] = self.key_rotations
                 
-                # if we've tried all keys and still failing, wait longer
                 if len(keys_tried) >= api_key_manager.get_working_key_count():
                     wait_time = min(self.rate_limit_backoff * 3, 120)
                     print(f"[RAGChainManager] All keys attempted. Waiting {wait_time}s...")
                     time.sleep(wait_time)
-                    # reset key statuses and try again
                     api_key_manager.reset_all_keys()
                     keys_tried.clear()
         
-        # if we exhaust all retries, raise error
         raise RuntimeError(
             f"Failed to get response after {attempts} attempts with {len(keys_tried)} keys. "
             "All API keys may be rate-limited. Please try again later."
@@ -376,7 +311,7 @@ class RAGChainManager:
             question (str): User's question
             mode (ChainMode): Operation mode
             k (int, optional): Number of documents to retrieve
-        
+            
         returns:
             str: Generated answer
         """
@@ -397,7 +332,7 @@ class RAGChainManager:
             question (str): User's question
             mode (ChainMode): Operation mode
             k (int, optional): Number of documents to retrieve
-        
+            
         Yields:
             str: Response tokens as they are generated
         """
@@ -405,13 +340,11 @@ class RAGChainManager:
             chain = self.create_chain(mode=mode, k=k)
             for chunk in chain.stream(question):
                 yield chunk
-            # mark success after successful stream
             api_key_manager.mark_key_success(self.current_api_key)
             self._reset_backoff()
         except Exception as e:
             if self._is_rate_limit_error(e):
                 self._handle_rate_limit_error(e)
-                # retry with new key
                 chain = self.create_chain(mode=mode, k=k, force_recreate=True)
                 for chunk in chain.stream(question):
                     yield chunk
@@ -439,13 +372,7 @@ class RAGChainManager:
         useful when switching between different document sets.
         """
         self._chain_cache.clear()
-        # also reset backoff when clearing cache
         self._reset_backoff()
-
-
-# =============================================================================
-# Format Citations Function
-# =============================================================================
 
 def format_citations(docs: List[Document]) -> str:
     """
@@ -453,21 +380,19 @@ def format_citations(docs: List[Document]) -> str:
     
     Args:
         docs (List[Document]): Retrieved documents used in answer
-    
+        
     Returns:
         str: Formatted citation string
     """
     if not docs:
         return "No sources cited."
     
-    citations = []  # list for citation strings
-    seen_sources = set()  # track unique sources to avoid duplicates
+    citations = []
+    seen_sources = set()
     
     for doc in docs:
         source = doc.metadata.get("source", "Unknown")
         content_type = doc.metadata.get("content_type", "Unknown")
-        
-        # create unique identifier for source
         source_id = f"{source} ({content_type})"
         
         if source_id not in seen_sources:
@@ -479,14 +404,7 @@ def format_citations(docs: List[Document]) -> str:
     else:
         return "**Sources:** No specific sources cited."
 
-
-# =============================================================================
-# Singleton Instance
-# =============================================================================
-
-# singleton instance for application-wide use
 _rag_chain_manager: Optional[RAGChainManager] = None
-
 
 def get_rag_chain_manager() -> RAGChainManager:
     """
@@ -496,12 +414,9 @@ def get_rag_chain_manager() -> RAGChainManager:
         RAGChainManager: Singleton instance
     """
     global _rag_chain_manager
-    
     if _rag_chain_manager is None:
         _rag_chain_manager = RAGChainManager()
-    
     return _rag_chain_manager
-
 
 def ask_question(
     question: str,
@@ -516,24 +431,20 @@ def ask_question(
         question (str): User's question
         mode (str): Operation mode ("study", "exam", or "quick")
         k (int, optional): Number of documents to retrieve
-    
+        
     Returns:
         Tuple[str, Dict]: (answer, metadata)
     """
     manager = get_rag_chain_manager()
     
-    # convert string mode to enum
     mode_map = {
         "study": ChainMode.STUDY,
         "exam": ChainMode.EXAM,
         "quick": ChainMode.QUICK
     }
-    
     chain_mode = mode_map.get(mode.lower(), ChainMode.STUDY)
     
-    # invoke and return answer with metadata
     return manager.invoke_with_retry(question, mode=chain_mode, k=k)
-
 
 def get_api_usage_stats() -> Dict[str, Any]:
     """

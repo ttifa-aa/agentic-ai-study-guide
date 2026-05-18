@@ -3,17 +3,16 @@ track A2: comprehensive exam preparation assistant.
 specialized track for exam preparation with study plans and progress tracking.
 """
 
-import re  # regular expressions for pattern matching in exam paper parsing
-import json  # for serializing progress data
-from typing import Dict, List, Optional, Any, Tuple  # type hints for function signatures
-from datetime import datetime, timedelta  # for date calculations
-from pathlib import Path  # for file path handling
+import re
+import json
+from typing import Dict, List, Optional, Any, Tuple
+from datetime import datetime, timedelta
+from pathlib import Path
 
-# local imports
 from core.rag_chain import ChainMode
-from tracks.base_track import BaseTrack, TrackFeatures  # base track class
-from config.settings import TrackType, ContentType, EXAM_PATTERNS  # exam configuration
-from utils.exam_utils import (  # exam utility functions
+from tracks.base_track import BaseTrack, TrackFeatures
+from config.settings import TrackType, ContentType, EXAM_PATTERNS
+from utils.exam_utils import (
     analyze_exam_pattern,
     extract_questions_from_paper,
     identify_weak_areas,
@@ -28,8 +27,7 @@ from utils.exam_utils import (  # exam utility functions
     StudyPlan,
     ExamQuestion
 )
-from prompts.base_prompts import EXAM_PREPARATION_PROMPT, TOPIC_SYNTHESIS_PROMPT  # prompt templates
-
+from prompts.base_prompts import EXAM_PREPARATION_PROMPT, TOPIC_SYNTHESIS_PROMPT
 
 class TrackA2Exam(BaseTrack):
     """
@@ -39,25 +37,14 @@ class TrackA2Exam(BaseTrack):
     
     def __init__(self):
         """Initialize the exam preparation track."""
-        # call parent class initializer
         super().__init__()
-        
-        # set track type
         self.track_type = TrackType.TRACK_A2_EXAM
-        
-        # initialize track features
         self.features = self.get_features()
-        
-        # progress tracking data
         self.topic_progress: Dict[str, TopicProgress] = {}
         self.progress_history: List[Dict] = []
         self.study_plans: List[StudyPlan] = []
         self.extracted_questions: List[ExamQuestion] = []
-        
-        # exam pattern analysis
         self.detected_exam_pattern: Optional[Dict] = None
-        
-        # session metrics
         self.session_start_time = datetime.now()
         self.questions_answered = 0
     
@@ -71,13 +58,13 @@ class TrackA2Exam(BaseTrack):
         return TrackFeatures(
             name="Comprehensive Exam Preparation Assistant",
             description="""
-            Exam-focused track with:
-            - Complete exam preparation workflows combining all materials
-            - Topic-wise question practice with solutions from study materials
-            - Weak area identification and targeted content recommendations
-            - Custom study plans based on syllabus and available content
-            - Progress tracking across topics and question practice
-            """,
+Exam-focused track with:
+- Complete exam preparation workflows combining all materials
+- Topic-wise question practice with solutions from study materials
+- Weak area identification and targeted content recommendations
+- Custom study plans based on syllabus and available content
+- Progress tracking across topics and question practice
+""",
             supported_content_types=[
                 ContentType.LECTURE_NOTES.value,
                 ContentType.TEXTBOOK.value,
@@ -100,13 +87,12 @@ class TrackA2Exam(BaseTrack):
         
         Args:
             prompt_type (str): Type of prompt needed
-        
+            
         Returns:
             str: Specialized prompt template
         """
         if prompt_type in self.features.special_prompts:
             return self.features.special_prompts[prompt_type]
-        
         return EXAM_PREPARATION_PROMPT
     
     def process_query(
@@ -122,17 +108,13 @@ class TrackA2Exam(BaseTrack):
             query (str): User's query or question
             query_type (str): Type of query (solve, plan, analyze, etc.)
             **kwargs: Additional parameters
-        
+            
         Returns:
             Dict[str, Any]: Response with exam-specific metadata
         """
-        # detect query category
         detected_category = self._detect_query_category(query)
-        
-        # increment questions answered counter
         self.questions_answered += 1
         
-        # process based on query category
         if detected_category == "solve":
             return self._handle_solve_query(query, **kwargs)
         elif detected_category == "plan":
@@ -150,28 +132,24 @@ class TrackA2Exam(BaseTrack):
         
         Args:
             query (str): User's query
-        
+            
         Returns:
             str: Query category
         """
         query_lower = query.lower()
         
-        # check for solve/explain queries
         solve_keywords = ["solve", "explain", "answer", "how to", "what is", "calculate"]
         if any(keyword in query_lower for keyword in solve_keywords):
             return "solve"
         
-        # check for study plan queries
         plan_keywords = ["study plan", "schedule", "prepare for", "revision", "timeline"]
         if any(keyword in query_lower for keyword in plan_keywords):
             return "plan"
         
-        # check for analysis queries
         analyze_keywords = ["analyze", "weak", "strength", "progress", "performance", "gap"]
         if any(keyword in query_lower for keyword in analyze_keywords):
             return "analyze"
         
-        # check for recommendation queries
         recommend_keywords = ["recommend", "suggest", "what should i", "which topic", "focus on"]
         if any(keyword in query_lower for keyword in recommend_keywords):
             return "recommend"
@@ -185,36 +163,22 @@ class TrackA2Exam(BaseTrack):
         Args:
             query (str): Question to solve
             **kwargs: Additional parameters
-        
+            
         Returns:
             Dict[str, Any]: Solution with exam-focused explanation
         """
-        # detect if this is from an exam paper
         is_exam_question = self._is_exam_question(query)
-        
-        # use exam preparation prompt
-        prompt = self.get_specialized_prompt("exam_solve")
-        
-        # get answer with exam focus
-        answer = self.rag_manager.invoke(
-            query,
-            mode=ChainMode.EXAM  # use exam mode for step-by-step solutions
-        )
-        
-        # estimate marks for this question
+        answer = self.rag_manager.invoke(query, mode=ChainMode.EXAM)
         estimated_marks = self._estimate_question_marks(query)
-        
-        # track topic progress
         detected_topic = self._detect_question_topic(query)
-        self._update_topic_progress(detected_topic, is_correct=None)  # none means attempted but not graded
+        self._update_topic_progress(detected_topic, is_correct=None)
         
-        # prepare metadata
         metadata = {
             "query_category": "solve",
             "is_exam_question": is_exam_question,
             "estimated_marks": estimated_marks,
             "detected_topic": detected_topic,
-            "suggested_time_minutes": estimated_marks  # 1 minute per mark guideline
+            "suggested_time_minutes": estimated_marks
         }
         
         return self.format_response(answer, metadata=metadata)
@@ -226,26 +190,21 @@ class TrackA2Exam(BaseTrack):
         Args:
             query (str): Study plan request
             **kwargs: Additional parameters
-        
+            
         Returns:
             Dict[str, Any]: Generated study plan
         """
-        # extract parameters from query
-        days_available = self._extract_days_available(query) or 14  # default 14 days
-        hours_per_day = self._extract_hours_per_day(query) or 3  # default 3 hours
+        days_available = self._extract_days_available(query) or 14
+        hours_per_day = self._extract_hours_per_day(query) or 3
         
-        # get topics from progress data
         topics = list(self.topic_progress.keys())
         if not topics:
-            # fallback to default topics if no progress data
             topics = ["General Concepts", "Core Topics", "Advanced Topics"]
         
-        # detect exam pattern
-        exam_pattern = "internal"  # default
+        exam_pattern = "internal"
         if self.detected_exam_pattern:
             exam_pattern = self.detected_exam_pattern.get("exam_type", "internal")
         
-        # generate study plan
         study_plan = generate_study_plan(
             subject=self._extract_subject(query) or "Current Subject",
             topics=topics,
@@ -254,13 +213,9 @@ class TrackA2Exam(BaseTrack):
             exam_pattern=exam_pattern
         )
         
-        # store study plan
         self.study_plans.append(study_plan)
-        
-        # format for display
         plan_display = format_study_plan_display(study_plan)
         
-        # prepare metadata
         metadata = {
             "query_category": "plan",
             "days_available": days_available,
@@ -279,22 +234,17 @@ class TrackA2Exam(BaseTrack):
         Args:
             query (str): Analysis request
             **kwargs: Additional parameters
-        
+            
         Returns:
             Dict[str, Any]: Progress analysis
         """
-        # identify weak areas
         weak_areas = identify_weak_areas(self.topic_progress)
-        
-        # track progress over time
         progress_analytics = track_progress_over_time(self.progress_history)
         
-        # calculate overall metrics
         total_questions = sum(p.questions_attempted for p in self.topic_progress.values())
         total_correct = sum(p.questions_correct for p in self.topic_progress.values())
         total_time = sum(p.time_spent_minutes for p in self.topic_progress.values())
         
-        # build analysis response
         analysis = f"""
 ## Progress Analysis
 
@@ -315,7 +265,6 @@ class TrackA2Exam(BaseTrack):
         
         analysis += f"\n### Improvement Rate: {progress_analytics.get('improvement_rate', 0) * 100:.1f}%"
         
-        # prepare metadata
         metadata = {
             "query_category": "analyze",
             "weak_areas_count": len(weak_areas),
@@ -333,30 +282,19 @@ class TrackA2Exam(BaseTrack):
         Args:
             query (str): Recommendation request
             **kwargs: Additional parameters
-        
+            
         Returns:
             Dict[str, Any]: Recommendations
         """
-        # identify weak areas
         weak_areas = identify_weak_areas(self.topic_progress)
-        
-        # organize questions by topic
         questions_by_topic = self._organize_questions_by_topic()
+        recommended_questions = recommend_practice_questions(weak_areas, questions_by_topic, count=5)
         
-        # get recommendations
-        recommended_questions = recommend_practice_questions(
-            weak_areas,
-            questions_by_topic,
-            count=5
-        )
-        
-        # generate exam tips
         exam_tips = generate_exam_tips(
             self.detected_exam_pattern.get("exam_type", "internal") if self.detected_exam_pattern else "internal",
             list(self.topic_progress.keys())
         )
         
-        # build recommendation response
         response = "## Recommended Focus Areas\n\n"
         
         if weak_areas:
@@ -374,7 +312,6 @@ class TrackA2Exam(BaseTrack):
             for tip in exam_tips[:5]:
                 response += f"- {tip}\n"
         
-        # prepare metadata
         metadata = {
             "query_category": "recommend",
             "recommendations_count": len(recommended_questions),
@@ -390,17 +327,12 @@ class TrackA2Exam(BaseTrack):
         Args:
             query (str): General exam query
             **kwargs: Additional parameters
-        
+            
         Returns:
             Dict[str, Any]: Response with exam context
         """
-        # use standard exam mode
-        answer = self.rag_manager.invoke(
-            query,
-            mode=ChainMode.EXAM
-        )
+        answer = self.rag_manager.invoke(query, mode=ChainMode.EXAM)
         
-        # prepare metadata
         metadata = {
             "query_category": "general",
             "questions_answered_session": self.questions_answered,
@@ -415,23 +347,18 @@ class TrackA2Exam(BaseTrack):
         
         Args:
             paper_text (str): Exam paper text content
-        
+            
         Returns:
             Dict[str, Any]: Analysis results
         """
-        # analyze exam pattern
         self.detected_exam_pattern = analyze_exam_pattern(paper_text)
-        
-        # extract questions
         questions = extract_questions_from_paper(paper_text)
         self.extracted_questions.extend(questions)
         
-        # analyze topic distribution
         topic_distribution = {}
         for q in questions:
             topic_distribution[q.topic] = topic_distribution.get(q.topic, 0) + q.marks
         
-        # organize questions by topic
         questions_by_topic = self._organize_questions_by_topic()
         
         return {
@@ -439,9 +366,7 @@ class TrackA2Exam(BaseTrack):
             "total_questions": len(questions),
             "total_marks": self.detected_exam_pattern.get("total_marks", 0),
             "topic_distribution": topic_distribution,
-            "questions_by_topic": {
-                topic: len(qs) for topic, qs in questions_by_topic.items()
-            }
+            "questions_by_topic": {topic: len(qs) for topic, qs in questions_by_topic.items()}
         }
     
     def _update_topic_progress(
@@ -470,7 +395,6 @@ class TrackA2Exam(BaseTrack):
         progress.time_spent_minutes += time_spent
         progress.last_practiced = datetime.now()
         
-        # recalculate mastery
         consistency_days = (datetime.now() - self.session_start_time).days
         progress.mastery_level = calculate_topic_mastery(
             progress.questions_attempted,
@@ -479,7 +403,6 @@ class TrackA2Exam(BaseTrack):
             consistency_days
         )
         
-        # add to history
         self.progress_history.append({
             "timestamp": datetime.now().isoformat(),
             "topic": topic,
@@ -493,15 +416,15 @@ class TrackA2Exam(BaseTrack):
         
         Args:
             query (str): User query
-        
+            
         Returns:
             bool: True if likely an exam question
         """
         exam_indicators = [
-            r'^\d+[\.\)]',  # starts with number followed by . or )
-            r'\[\d+\]',     # contains [marks] format
-            r'\(\d+\)',     # contains (marks) format
-            r'explain|describe|discuss|solve|calculate',  # exam command words
+            r'^\d+[\.\)]',
+            r'\[\d+\]',
+            r'\(\d+\)',
+            r'explain|describe|discuss|solve|calculate',
         ]
         
         query_lower = query.lower()
@@ -517,24 +440,22 @@ class TrackA2Exam(BaseTrack):
         
         Args:
             query (str): Question text
-        
+            
         Returns:
             int: Estimated marks
         """
-        # look for explicit marks indication
         marks_pattern = r'[\[\(](\d+)[\]\)]\s*(?:marks?)?'
         match = re.search(marks_pattern, query.lower())
         if match:
             return int(match.group(1))
         
-        # estimate based on question length and complexity
         word_count = len(query.split())
         if word_count < 10:
-            return 2  # short answer
+            return 2
         elif word_count < 30:
-            return 5  # medium answer
+            return 5
         else:
-            return 10  # long answer
+            return 10
     
     def _detect_question_topic(self, query: str) -> str:
         """
@@ -542,7 +463,7 @@ class TrackA2Exam(BaseTrack):
         
         Args:
             query (str): Question text
-        
+            
         Returns:
             str: Detected topic
         """
@@ -554,7 +475,6 @@ class TrackA2Exam(BaseTrack):
             if any(keyword in query_lower for keyword in keywords):
                 return subject
         
-        # check for topics in existing progress data
         for topic in self.topic_progress.keys():
             if topic.lower() in query_lower:
                 return topic
@@ -567,13 +487,13 @@ class TrackA2Exam(BaseTrack):
         
         Args:
             query (str): User query
-        
+            
         Returns:
             Optional[int]: Days available or None
         """
         patterns = [
             r'(\d+)\s*days?',
-            r'(\d+)\s*weeks?',  # will convert to days
+            r'(\d+)\s*weeks?',
             r'in\s+(\d+)\s+days?'
         ]
         
@@ -593,7 +513,7 @@ class TrackA2Exam(BaseTrack):
         
         Args:
             query (str): User query
-        
+            
         Returns:
             Optional[int]: Hours per day or None
         """
@@ -615,7 +535,7 @@ class TrackA2Exam(BaseTrack):
         
         Args:
             query (str): User query
-        
+            
         Returns:
             Optional[str]: Subject name or None
         """
@@ -652,7 +572,6 @@ class TrackA2Exam(BaseTrack):
         Returns:
             Dict[str, Any]: Progress summary
         """
-        # calculate overall metrics
         metrics = analyze_performance_metrics(
             questions_attempted=sum(p.questions_attempted for p in self.topic_progress.values()),
             questions_correct=sum(p.questions_correct for p in self.topic_progress.values()),
@@ -660,22 +579,15 @@ class TrackA2Exam(BaseTrack):
             topic_coverage={t: p.questions_attempted for t, p in self.topic_progress.items()}
         )
         
-        # identify weak areas
         weak_areas = identify_weak_areas(self.topic_progress)
-        
-        # track progress trend
         progress_analytics = track_progress_over_time(self.progress_history)
         
         return {
             "metrics": metrics,
             "weak_areas": weak_areas,
             "progress_trend": progress_analytics,
-            "topics_mastered": [
-                t for t, p in self.topic_progress.items() if p.mastery_level >= 0.8
-            ],
-            "topics_needing_work": [
-                t for t, p in self.topic_progress.items() if p.mastery_level < 0.6
-            ],
+            "topics_mastered": [t for t, p in self.topic_progress.items() if p.mastery_level >= 0.8],
+            "topics_needing_work": [t for t, p in self.topic_progress.items() if p.mastery_level < 0.6],
             "total_study_plans": len(self.study_plans),
             "questions_extracted": len(self.extracted_questions)
         }
@@ -691,9 +603,11 @@ class TrackA2Exam(BaseTrack):
         
         report = f"""
 # Exam Preparation Progress Report
+
 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
 ## Overall Performance
+
 - Overall Accuracy: {summary['metrics']['overall_accuracy']:.1f}%
 - Total Questions: {summary['metrics']['total_questions']}
 - Total Study Time: {summary['metrics']['total_time_hours']:.1f} hours

@@ -126,6 +126,8 @@ class SystemConfig:
     # Progress Tracking
     DATABASE_PATH: str = "data/progress.db"
     CACHE_TTL_SECONDS: int = 3600
+    # Embedding model name for local HuggingFace embeddings
+    EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
 
 
 # Create global config instance
